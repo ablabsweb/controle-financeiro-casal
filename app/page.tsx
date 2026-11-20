@@ -5,7 +5,7 @@ import {
   Lock,
   LogOut,
   Plus,
-  Wallet,
+  Wallet as WalletIcon,
   Sofa,
   Receipt,
   TrendingUp,
@@ -13,11 +13,30 @@ import {
   X,
   Loader2,
   CreditCard,
+  Pencil,
+  Trash2,
+  CalendarClock,
+  Calculator,
+  ListChecks,
+  LayoutDashboard,
+  CheckCircle2,
+  Circle,
+  Ban,
+  RotateCcw,
+  ArrowUpCircle,
+  ArrowDownCircle,
 } from 'lucide-react';
 
 interface User {
   id: number;
   name: string;
+}
+
+interface Wallet {
+  id: number;
+  name: string;
+  type: string;
+  user?: { name: string };
 }
 
 interface Expense {
@@ -28,18 +47,43 @@ interface Expense {
   installments: number;
   sheetType: 'Moveis' | 'Comum';
   payerId: number;
-  payer: {
-    name: string;
-  };
+  payer: { name: string };
+  walletId?: number | null;
+  wallet?: { id: number; name: string; type: string } | null;
   createdAt: string;
 }
 
-const RENDA_ARTHUR = 6372;
-const RENDA_PYETRA = 1841;
-const RENDA_TOTAL = RENDA_ARTHUR + RENDA_PYETRA;
+interface Income {
+  id: number;
+  description: string;
+  amount: number;
+  user: { name: string };
+  createdAt: string;
+}
+
+interface FixedBill {
+  id: number;
+  description: string;
+  amount: number;
+  dueDay: number;
+  category: string;
+  isActive: boolean;
+  user: { name: string };
+}
+
+interface PriorityItem {
+  id: number;
+  name: string;
+  estimatedPrice: number;
+  priority: 'Alta' | 'Média' | 'Baixa';
+  purchased: boolean;
+  user: { name: string };
+}
+
+type MainSection = 'dashboard' | 'expenses' | 'fixed' | 'wallet_income' | 'priorities' | 'calculator';
 
 const formatBRL = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -47,62 +91,92 @@ export default function Home() {
   const [loginError, setLoginError] = useState('');
   const [loadingLogin, setLoadingLogin] = useState(false);
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loadingExpenses, setLoadingExpenses] = useState(false);
-  const [activeTab, setActiveTab] = useState<'Todos' | 'Moveis' | 'Comum'>('Todos');
+  const [section, setSection] = useState<MainSection>('dashboard');
+  const [loadingData, setLoadingData] = useState(false);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Dados do banco
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
+  const [priorities, setPriorities] = useState<PriorityItem[]>([]);
+
+  // Filtros e Modal de Gastos (Criar / Editar)
+  const [expenseFilter, setExpenseFilter] = useState<'Todos' | 'Moveis' | 'Comum'>('Todos');
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
+
+  const [expenseForm, setExpenseForm] = useState({
     description: '',
     category: 'Móveis',
     amount: '',
     installments: '1',
     sheetType: 'Moveis' as 'Moveis' | 'Comum',
+    walletId: '',
   });
 
-  // Recupera sessão salva
+  // Formulários secundários
+  const [incomeForm, setIncomeForm] = useState({ description: '', amount: '' });
+  const [walletForm, setWalletForm] = useState({ name: '', type: 'Crédito' });
+  const [billForm, setBillForm] = useState({
+    description: '',
+    amount: '',
+    dueDay: '10',
+    category: 'Moradia',
+  });
+  const [priorityForm, setPriorityForm] = useState({
+    name: '',
+    estimatedPrice: '',
+    priority: 'Alta' as 'Alta' | 'Média' | 'Baixa',
+  });
+
+  // Calculadora de Comprometimento
+  const [calcAmount, setCalcAmount] = useState('');
+  const [calcInstallments, setCalcInstallments] = useState('1');
+
   useEffect(() => {
     const saved = localStorage.getItem('casal_user');
-    if (saved) {
-      setUser(JSON.parse(saved));
-    }
+    if (saved) setUser(JSON.parse(saved));
   }, []);
 
-  // Busca despesas quando logado
   useEffect(() => {
-    if (user) {
-      fetchExpenses();
-    }
+    if (user) fetchAllData();
   }, [user]);
 
-  const fetchExpenses = async () => {
-    setLoadingExpenses(true);
+  const fetchAllData = async () => {
+    setLoadingData(true);
     try {
-      const res = await fetch('/api/expenses');
-      if (res.ok) {
-        const data = await res.json();
-        setExpenses(data);
-      }
+      const [expRes, incRes, walRes, billRes, prioRes] = await Promise.all([
+        fetch('/api/expenses'),
+        fetch('/api/incomes'),
+        fetch('/api/wallets'),
+        fetch('/api/fixed-bills'),
+        fetch('/api/priorities'),
+      ]);
+      if (expRes.ok) setExpenses(await expRes.json());
+      if (incRes.ok) setIncomes(await incRes.json());
+      if (walRes.ok) setWallets(await walRes.json());
+      if (billRes.ok) setFixedBills(await billRes.json());
+      if (prioRes.ok) setPriorities(await prioRes.json());
     } catch (err) {
-      console.error('Erro ao carregar despesas:', err);
+      console.error('Erro ao carregar dados:', err);
     } finally {
-      setLoadingExpenses(false);
+      setLoadingData(false);
     }
   };
 
+  // --- LOGIN ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
     setLoadingLogin(true);
-
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-
       const data = await res.json();
       if (!res.ok) {
         setLoginError(data.error || 'Senha inválida.');
@@ -123,43 +197,168 @@ export default function Home() {
     setUser(null);
   };
 
-  const handleAddExpense = async (e: React.FormEvent) => {
+  // --- GASTOS (CRIAR / EDITAR / EXCLUIR) ---
+  const openNewExpenseModal = () => {
+    setEditingExpenseId(null);
+    setExpenseForm({
+      description: '',
+      category: 'Móveis',
+      amount: '',
+      installments: '1',
+      sheetType: 'Moveis',
+      walletId: wallets[0]?.id ? String(wallets[0].id) : '',
+    });
+    setIsExpenseModalOpen(true);
+  };
+
+  const openEditExpenseModal = (item: Expense) => {
+    setEditingExpenseId(item.id);
+    setExpenseForm({
+      description: item.description,
+      category: item.category,
+      amount: String(item.amount),
+      installments: String(item.installments),
+      sheetType: item.sheetType,
+      walletId: item.walletId ? String(item.walletId) : '',
+    });
+    setIsExpenseModalOpen(true);
+  };
+
+  const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
     setSubmitting(true);
     try {
-      const res = await fetch('/api/expenses', {
-        method: 'POST',
+      const url = editingExpenseId ? `/api/expenses/${editingExpenseId}` : '/api/expenses';
+      const method = editingExpenseId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
+          ...expenseForm,
           payerId: user.id,
         }),
       });
-
       if (res.ok) {
-        await fetchExpenses();
-        setIsModalOpen(false);
-        setFormData({
-          description: '',
-          category: formData.sheetType === 'Moveis' ? 'Móveis' : 'Moradia',
-          amount: '',
-          installments: '1',
-          sheetType: formData.sheetType,
-        });
+        await fetchAllData();
+        setIsExpenseModalOpen(false);
       }
-    } catch (err) {
-      console.error('Erro ao salvar:', err);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Cálculos do Dashboard
+  const handleDeleteExpense = async (id: number) => {
+    if (!confirm('Deseja realmente excluir este gasto?')) return;
+    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+    if (res.ok) fetchAllData();
+  };
+
+  // --- RENDAS ---
+  const handleAddIncome = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const res = await fetch('/api/incomes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...incomeForm, userId: user.id }),
+    });
+    if (res.ok) {
+      setIncomeForm({ description: '', amount: '' });
+      fetchAllData();
+    }
+  };
+
+  const handleDeleteIncome = async (id: number) => {
+    await fetch(`/api/incomes?id=${id}`, { method: 'DELETE' });
+    fetchAllData();
+  };
+
+  // --- CARTEIRA ---
+  const handleAddWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const res = await fetch('/api/wallets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...walletForm, userId: user.id }),
+    });
+    if (res.ok) {
+      setWalletForm({ name: '', type: 'Crédito' });
+      fetchAllData();
+    }
+  };
+
+  const handleDeleteWallet = async (id: number) => {
+    await fetch(`/api/wallets?id=${id}`, { method: 'DELETE' });
+    fetchAllData();
+  };
+
+  // --- CONTAS FIXAS ---
+  const handleAddBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const res = await fetch('/api/fixed-bills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...billForm, userId: user.id }),
+    });
+    if (res.ok) {
+      setBillForm({ description: '', amount: '', dueDay: '10', category: 'Moradia' });
+      fetchAllData();
+    }
+  };
+
+  const handleToggleBill = async (bill: FixedBill) => {
+    await fetch('/api/fixed-bills', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: bill.id, isActive: !bill.isActive }),
+    });
+    fetchAllData();
+  };
+
+  const handleDeleteBill = async (id: number) => {
+    await fetch(`/api/fixed-bills?id=${id}`, { method: 'DELETE' });
+    fetchAllData();
+  };
+
+  // --- PRIORIDADES ---
+  const handleAddPriority = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const res = await fetch('/api/priorities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...priorityForm, userId: user.id }),
+    });
+    if (res.ok) {
+      setPriorityForm({ name: '', estimatedPrice: '', priority: 'Alta' });
+      fetchAllData();
+    }
+  };
+
+  const handleTogglePriority = async (item: PriorityItem) => {
+    await fetch('/api/priorities', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.id, purchased: !item.purchased }),
+    });
+    fetchAllData();
+  };
+
+  const handleDeletePriority = async (id: number) => {
+    await fetch(`/api/priorities?id=${id}`, { method: 'DELETE' });
+    fetchAllData();
+  };
+
+  // --- CÁLCULOS CONSOLIDADOS ---
   const stats = useMemo(() => {
+    const rendaTotal = incomes.reduce((acc, i) => acc + i.amount, 0);
     const moveis = expenses.filter((e) => e.sheetType === 'Moveis');
     const comuns = expenses.filter((e) => e.sheetType === 'Comum');
+    const fixasAtivas = fixedBills.filter((b) => b.isActive);
 
     const totalMoveis = moveis.reduce((acc, item) => acc + item.amount, 0);
     const parcelasMesApe = moveis.reduce(
@@ -167,18 +366,54 @@ export default function Home() {
       0
     );
     const gastosComunsMes = comuns.reduce((acc, item) => acc + item.amount, 0);
-    const comprometidoMes = parcelasMesApe + gastosComunsMes;
-    const saldoLivre = RENDA_TOTAL - comprometidoMes;
+    const totalFixasMes = fixasAtivas.reduce((acc, item) => acc + item.amount, 0);
 
-    return { totalMoveis, parcelasMesApe, gastosComunsMes, comprometidoMes, saldoLivre };
-  }, [expenses]);
+    const totalSaidasMes = parcelasMesApe + gastosComunsMes + totalFixasMes;
+    const saldoLivre = rendaTotal - totalSaidasMes;
+    const percentualComprometido = rendaTotal > 0 ? (totalSaidasMes / rendaTotal) * 100 : 0;
+
+    return {
+      rendaTotal,
+      totalMoveis,
+      parcelasMesApe,
+      gastosComunsMes,
+      totalFixasMes,
+      totalSaidasMes,
+      saldoLivre,
+      percentualComprometido,
+    };
+  }, [expenses, incomes, fixedBills]);
+
+  // Próximas contas a vencer (ordenadas a partir do dia de hoje)
+  const upcomingBills = useMemo(() => {
+    const today = new Date().getDate();
+    return fixedBills
+      .filter((b) => b.isActive)
+      .sort((a, b) => {
+        const diffA = a.dueDay >= today ? a.dueDay - today : a.dueDay + 31 - today;
+        const diffB = b.dueDay >= today ? b.dueDay - today : b.dueDay + 31 - today;
+        return diffA - diffB;
+      });
+  }, [fixedBills]);
 
   const filteredExpenses = useMemo(() => {
-    if (activeTab === 'Todos') return expenses;
-    return expenses.filter((e) => e.sheetType === activeTab);
-  }, [expenses, activeTab]);
+    if (expenseFilter === 'Todos') return expenses;
+    return expenses.filter((e) => e.sheetType === expenseFilter);
+  }, [expenses, expenseFilter]);
 
-  // TELA DE LOGIN
+  // Simulação da Calculadora
+  const calcResult = useMemo(() => {
+    const val = parseFloat(calcAmount.replace(',', '.')) || 0;
+    const parc = Math.max(1, parseInt(calcInstallments) || 1);
+    const parcelaNova = val / parc;
+    const novasSaidas = stats.totalSaidasMes + parcelaNova;
+    const novoPercentual = stats.rendaTotal > 0 ? (novasSaidas / stats.rendaTotal) * 100 : 0;
+    const impactoPercentual = stats.rendaTotal > 0 ? (parcelaNova / stats.rendaTotal) * 100 : 0;
+    const novoSaldoLivre = stats.rendaTotal - novasSaidas;
+    return { parcelaNova, novasSaidas, novoPercentual, impactoPercentual, novoSaldoLivre };
+  }, [calcAmount, calcInstallments, stats]);
+
+  // --- TELA DE LOGIN ---
   if (!user) {
     return (
       <main className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden">
@@ -191,9 +426,7 @@ export default function Home() {
               <Lock className="w-6 h-6 text-[#3B5BFF]" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Arthur & Pyetra</h1>
-            <p className="text-sm text-zinc-400 mt-1">
-              Controle Financeiro • Novo Apê & Casal
-            </p>
+            <p className="text-sm text-zinc-400 mt-1">Controle Financeiro • Novo Apê & Casal</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -230,34 +463,34 @@ export default function Home() {
     );
   }
 
-  // DASHBOARD PRINCIPAL
+  const navItems: { id: MainSection; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Visão Geral', icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: 'expenses', label: 'Gastos', icon: <Receipt className="w-4 h-4" /> },
+    { id: 'fixed', label: 'Contas Fixas', icon: <CalendarClock className="w-4 h-4" /> },
+    { id: 'wallet_income', label: 'Renda & Carteira', icon: <WalletIcon className="w-4 h-4" /> },
+    { id: 'priorities', label: 'Prioridades', icon: <ListChecks className="w-4 h-4" /> },
+    { id: 'calculator', label: 'Calculadora', icon: <Calculator className="w-4 h-4" /> },
+  ];
+
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-[#09090b]/80 backdrop-blur-xl border-b border-zinc-800/80">
+      <header className="sticky top-0 z-30 bg-[#09090b]/85 backdrop-blur-xl border-b border-zinc-800/80">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#3B5BFF] flex items-center justify-center font-bold text-sm shadow-lg shadow-[#3B5BFF]/25">
               A&P
             </div>
             <div>
-              <h1 className="font-semibold text-sm sm:text-base leading-tight">
-                Finanças do Casal
-              </h1>
-              <p className="text-xs text-zinc-500">Novo Apê & Rotina</p>
+              <h1 className="font-semibold text-sm sm:text-base leading-tight">Finanças do Casal</h1>
+              <p className="text-xs text-zinc-500">Logado como {user.name}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-full text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="text-zinc-400">Logado como</span>
-              <span className="font-semibold text-zinc-100">{user.name}</span>
-            </div>
-
+          <div className="flex items-center gap-2.5">
             <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#3B5BFF] hover:bg-[#2f4be0] text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-xl flex items-center gap-1.5 transition shadow-lg shadow-[#3B5BFF]/20 cursor-pointer"
+              onClick={openNewExpenseModal}
+              className="bg-[#3B5BFF] hover:bg-[#2f4be0] text-white text-xs sm:text-sm font-medium px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-lg shadow-[#3B5BFF]/20 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Gasto</span>
@@ -272,200 +505,680 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {/* Barra de Navegação */}
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 overflow-x-auto">
+          <nav className="flex items-center gap-1 pb-2">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                  section === item.id
+                    ? 'bg-[#3B5BFF]/15 text-[#3B5BFF] border border-[#3B5BFF]/30'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
-        {/* KPI Cards */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-5">
-            <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-3">
-              <span>RENDA TOTAL DO CASAL</span>
-              <Wallet className="w-4 h-4 text-emerald-400" />
-            </div>
-            <p className="text-2xl font-bold tracking-tight">{formatBRL(RENDA_TOTAL)}</p>
-            <p className="text-xs text-zinc-500 mt-1">
-              Arthur {formatBRL(RENDA_ARTHUR)} • Pyetra {formatBRL(RENDA_PYETRA)}
-            </p>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+        {loadingData && (
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#3B5BFF]" />
+            Sincronizando com o banco...
           </div>
+        )}
 
-          <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-5">
-            <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-3">
-              <span>TOTAL MÓVEIS & APÊ</span>
-              <Sofa className="w-4 h-4 text-[#3B5BFF]" />
+        {/* ==================== 1. VISÃO GERAL ==================== */}
+        {section === 'dashboard' && (
+          <div className="space-y-6">
+            {/* Resumo Entradas x Saídas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-5">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-2">
+                  <span>ENTRADAS (RENDA)</span>
+                  <ArrowUpCircle className="w-4 h-4 text-emerald-400" />
+                </div>
+                <p className="text-2xl font-bold text-emerald-400">{formatBRL(stats.rendaTotal)}</p>
+                <p className="text-xs text-zinc-500 mt-1">{incomes.length} fonte(s) de renda</p>
+              </div>
+
+              <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-5">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-2">
+                  <span>SAÍDAS DO MÊS</span>
+                  <ArrowDownCircle className="w-4 h-4 text-rose-400" />
+                </div>
+                <p className="text-2xl font-bold text-rose-400">{formatBRL(stats.totalSaidasMes)}</p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Apê {formatBRL(stats.parcelasMesApe)} • Comuns {formatBRL(stats.gastosComunsMes)} • Fixas {formatBRL(stats.totalFixasMes)}
+                </p>
+              </div>
+
+              <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-5">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-2">
+                  <span>SALDO LIVRE NO MÊS</span>
+                  <TrendingUp className={`w-4 h-4 ${stats.saldoLivre >= 0 ? 'text-emerald-400' : 'text-rose-400'}`} />
+                </div>
+                <p className={`text-2xl font-bold ${stats.saldoLivre >= 0 ? 'text-zinc-100' : 'text-rose-400'}`}>
+                  {formatBRL(stats.saldoLivre)}
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Comprometimento: <span className="text-zinc-300 font-medium">{stats.percentualComprometido.toFixed(1)}%</span>
+                </p>
+              </div>
+
+              <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-5">
+                <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-2">
+                  <span>TOTAL MÓVEIS & APÊ</span>
+                  <Sofa className="w-4 h-4 text-[#3B5BFF]" />
+                </div>
+                <p className="text-2xl font-bold">{formatBRL(stats.totalMoveis)}</p>
+                <p className="text-xs text-zinc-500 mt-1">Parcelas/mês: {formatBRL(stats.parcelasMesApe)}</p>
+              </div>
             </div>
-            <p className="text-2xl font-bold tracking-tight">{formatBRL(stats.totalMoveis)}</p>
-            <p className="text-xs text-zinc-500 mt-1">
-              Parcelas/mês: <span className="text-zinc-300">{formatBRL(stats.parcelasMesApe)}</span>
-            </p>
-          </div>
 
-          <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-5">
-            <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-3">
-              <span>GASTOS COMUNS (MÊS)</span>
-              <Receipt className="w-4 h-4 text-amber-400" />
-            </div>
-            <p className="text-2xl font-bold tracking-tight">
-              {formatBRL(stats.gastosComunsMes)}
-            </p>
-            <p className="text-xs text-zinc-500 mt-1">Contas fixas e rotina</p>
-          </div>
-
-          <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-5">
-            <div className="flex items-center justify-between text-zinc-400 text-xs font-medium mb-3">
-              <span>SALDO LIVRE NO MÊS</span>
-              <TrendingUp
-                className={`w-4 h-4 ${stats.saldoLivre >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
-              />
-            </div>
-            <p
-              className={`text-2xl font-bold tracking-tight ${
-                stats.saldoLivre >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {formatBRL(stats.saldoLivre)}
-            </p>
-            <p className="text-xs text-zinc-500 mt-1">
-              Comprometido: {((stats.comprometidoMes / RENDA_TOTAL) * 100).toFixed(1)}% da renda
-            </p>
-          </div>
-        </section>
-
-        {/* Abas e Tabela de Gastos */}
-        <section className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/80 rounded-3xl overflow-hidden">
-          <div className="p-5 border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2 bg-zinc-950/70 p-1 rounded-xl border border-zinc-800/80 w-fit">
-              {(['Todos', 'Moveis', 'Comum'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                    activeTab === tab
-                      ? 'bg-[#3B5BFF] text-white shadow'
-                      : 'text-zinc-400 hover:text-zinc-200'
+            {/* Barra de comprometimento visual */}
+            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5">
+              <div className="flex justify-between text-xs mb-2">
+                <span className="text-zinc-400 font-medium">Comprometimento da Renda Mensal</span>
+                <span className="font-semibold">{stats.percentualComprometido.toFixed(1)}%</span>
+              </div>
+              <div className="w-full h-3 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+                <div
+                  className={`h-full transition-all duration-500 ${
+                    stats.percentualComprometido > 80
+                      ? 'bg-rose-500'
+                      : stats.percentualComprometido > 60
+                      ? 'bg-amber-500'
+                      : 'bg-[#3B5BFF]'
                   }`}
+                  style={{ width: `${Math.min(100, stats.percentualComprometido)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Próximas Contas a Vencer */}
+            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="w-5 h-5 text-[#3B5BFF]" />
+                  <h2 className="font-semibold text-base">Próximas Contas a Vencer</h2>
+                </div>
+                <button
+                  onClick={() => setSection('fixed')}
+                  className="text-xs text-[#3B5BFF] hover:underline cursor-pointer"
                 >
-                  {tab === 'Todos'
-                    ? 'Todos os Gastos'
-                    : tab === 'Moveis'
-                    ? 'Móveis & Apê'
-                    : 'Gastos Comuns'}
+                  Gerenciar fixas
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <span className="text-xs text-zinc-500">
-              {filteredExpenses.length} registro(s) encontrado(s)
-            </span>
+              {upcomingBills.length === 0 ? (
+                <p className="text-sm text-zinc-500 py-4">
+                  Nenhuma conta fixa ativa cadastrada. Adicione na aba <strong>Contas Fixas</strong>.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {upcomingBills.slice(0, 6).map((bill) => (
+                    <div
+                      key={bill.id}
+                      className="bg-zinc-950/70 border border-zinc-800/80 rounded-2xl p-4 flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{bill.description}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Vence dia <strong className="text-zinc-300">{bill.dueDay}</strong> • {bill.category}
+                        </p>
+                      </div>
+                      <span className="font-semibold text-sm text-amber-400">{formatBRL(bill.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+        )}
 
-          {loadingExpenses ? (
-            <div className="p-12 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#3B5BFF]" />
-            </div>
-          ) : filteredExpenses.length === 0 ? (
-            <div className="p-12 text-center text-zinc-500 text-sm">
-              Nenhum gasto registrado ainda. Clique em <strong>Novo Gasto</strong> para começar.
-            </div>
-          ) : (
-            <div className="divide-y divide-zinc-800/60">
-              {filteredExpenses.map((item) => {
-                const isArthur = item.payer?.name === 'Arthur';
-                const valorParcela = item.amount / (item.installments || 1);
-
-                return (
-                  <div
-                    key={item.id}
-                    className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-800/20 transition"
+        {/* ==================== 2. GASTOS (EDITAR / EXCLUIR) ==================== */}
+        {section === 'expenses' && (
+          <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-3xl overflow-hidden">
+            <div className="p-5 border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-2 bg-zinc-950/70 p-1 rounded-xl border border-zinc-800/80 w-fit">
+                {(['Todos', 'Moveis', 'Comum'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setExpenseFilter(tab)}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                      expenseFilter === tab ? 'bg-[#3B5BFF] text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
                   >
-                    <div className="flex items-start sm:items-center gap-3.5">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                          item.sheetType === 'Moveis'
-                            ? 'bg-[#3B5BFF]/15 text-[#3B5BFF]'
-                            : 'bg-amber-500/15 text-amber-400'
-                        }`}
-                      >
-                        {item.sheetType === 'Moveis' ? (
-                          <Sofa className="w-5 h-5" />
-                        ) : (
-                          <CreditCard className="w-5 h-5" />
-                        )}
+                    {tab === 'Todos' ? 'Todos' : tab === 'Moveis' ? 'Móveis & Apê' : 'Gastos Comuns'}
+                  </button>
+                ))}
+              </div>
+              <span className="text-xs text-zinc-500">{filteredExpenses.length} registro(s)</span>
+            </div>
+
+            {filteredExpenses.length === 0 ? (
+              <div className="p-12 text-center text-zinc-500 text-sm">Nenhum gasto encontrado.</div>
+            ) : (
+              <div className="divide-y divide-zinc-800/60">
+                {filteredExpenses.map((item) => {
+                  const isArthur = item.payer?.name === 'Arthur';
+                  const valorParcela = item.amount / (item.installments || 1);
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-800/20 transition"
+                    >
+                      <div className="flex items-start sm:items-center gap-3.5">
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                            item.sheetType === 'Moveis'
+                              ? 'bg-[#3B5BFF]/15 text-[#3B5BFF]'
+                              : 'bg-amber-500/15 text-amber-400'
+                          }`}
+                        >
+                          {item.sheetType === 'Moveis' ? <Sofa className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-zinc-100">{item.description}</p>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className="text-[11px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-md">
+                              {item.category}
+                            </span>
+                            {item.wallet && (
+                              <span className="text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                                {item.wallet.name}
+                              </span>
+                            )}
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium ${
+                                isArthur
+                                  ? 'bg-blue-500/15 text-blue-300 border border-blue-500/20'
+                                  : 'bg-pink-500/15 text-pink-300 border border-pink-500/20'
+                              }`}
+                            >
+                              <UserIcon className="w-3 h-3" />
+                              {item.payer?.name}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div>
-                        <p className="font-medium text-sm text-zinc-100">{item.description}</p>
-                        <div className="flex flex-wrap items-center gap-2 mt-1">
-                          <span className="text-[11px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-md">
-                            {item.category}
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium ${
-                              isArthur
-                                ? 'bg-blue-500/15 text-blue-300 border border-blue-500/20'
-                                : 'bg-pink-500/15 text-pink-300 border border-pink-500/20'
-                            }`}
+                      <div className="flex items-center justify-between sm:justify-end gap-4">
+                        <div className="text-left sm:text-right">
+                          <p className="font-semibold text-sm">{formatBRL(item.amount)}</p>
+                          {item.installments > 1 && (
+                            <p className="text-xs text-zinc-400">
+                              {item.installments}x de {formatBRL(valorParcela)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => openEditExpenseModal(item)}
+                            className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+                            title="Editar"
                           >
-                            <UserIcon className="w-3 h-3" />
-                            Lançado por {item.payer?.name || 'Desconhecido'}
-                          </span>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteExpense(item.id)}
+                            className="p-2 rounded-lg bg-zinc-900 hover:bg-rose-500/20 border border-zinc-800 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                    <div className="text-left sm:text-right pl-13 sm:pl-0">
-                      <p className="font-semibold text-sm text-zinc-100">
-                        {formatBRL(item.amount)}
+        {/* ==================== 3. CONTAS FIXAS ==================== */}
+        {section === 'fixed' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <form
+              onSubmit={handleAddBill}
+              className="bg-zinc-900/50 border border-zinc-800/80 rounded-3xl p-6 space-y-4 h-fit"
+            >
+              <h2 className="font-semibold text-base">Nova Conta Fixa</h2>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Condomínio, Internet, Netflix..."
+                value={billForm.description}
+                onChange={(e) => setBillForm({ ...billForm, description: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="Valor (R$)"
+                  value={billForm.amount}
+                  onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="31"
+                  required
+                  placeholder="Dia Venc."
+                  value={billForm.dueDay}
+                  onChange={(e) => setBillForm({ ...billForm, dueDay: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+                />
+              </div>
+              <select
+                value={billForm.category}
+                onChange={(e) => setBillForm({ ...billForm, category: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+              >
+                <option value="Moradia">Moradia</option>
+                <option value="Contas Básicas">Contas Básicas</option>
+                <option value="Assinaturas">Assinaturas</option>
+                <option value="Outros">Outros</option>
+              </select>
+              <button
+                type="submit"
+                className="w-full bg-[#3B5BFF] hover:bg-[#2f4be0] text-white text-sm font-medium py-2.5 rounded-xl cursor-pointer"
+              >
+                Adicionar Conta Fixa
+              </button>
+            </form>
+
+            <div className="lg:col-span-2 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-6 space-y-3">
+              <h2 className="font-semibold text-base mb-2">Contas Cadastradas</h2>
+              {fixedBills.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhuma conta fixa cadastrada.</p>
+              ) : (
+                fixedBills.map((bill) => (
+                  <div
+                    key={bill.id}
+                    className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                      bill.isActive
+                        ? 'bg-zinc-950/70 border-zinc-800/80'
+                        : 'bg-zinc-950/30 border-zinc-800/40 opacity-50'
+                    }`}
+                  >
+                    <div>
+                      <p className={`font-medium text-sm ${!bill.isActive && 'line-through'}`}>
+                        {bill.description}
                       </p>
-                      {item.installments > 1 && (
-                        <p className="text-xs text-zinc-400">
-                          {item.installments}x de {formatBRL(valorParcela)}
-                        </p>
-                      )}
+                      <p className="text-xs text-zinc-500">
+                        Todo dia {bill.dueDay} • {bill.category} • por {bill.user?.name}
+                        {!bill.isActive && ' • CANCELADA'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-sm">{formatBRL(bill.amount)}</span>
+                      <button
+                        onClick={() => handleToggleBill(bill)}
+                        title={bill.isActive ? 'Cancelar conta' : 'Reativar conta'}
+                        className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 cursor-pointer"
+                      >
+                        {bill.isActive ? <Ban className="w-3.5 h-3.5 text-amber-400" /> : <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBill(bill.id)}
+                        className="p-2 rounded-lg bg-zinc-900 hover:bg-rose-500/20 border border-zinc-800 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
-          )}
-        </section>
+          </div>
+        )}
+
+        {/* ==================== 4. RENDA & CARTEIRA ==================== */}
+        {section === 'wallet_income' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Controle de Renda */}
+            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-6 space-y-5">
+              <div>
+                <h2 className="font-semibold text-base">Entradas / Renda do Casal</h2>
+                <p className="text-xs text-zinc-400">Total atual: {formatBRL(stats.rendaTotal)}</p>
+              </div>
+
+              <form onSubmit={handleAddIncome} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Salário, Freela..."
+                  value={incomeForm.description}
+                  onChange={(e) => setIncomeForm({ ...incomeForm, description: e.target.value })}
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="Valor (R$)"
+                  value={incomeForm.amount}
+                  onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })}
+                  className="w-full sm:w-32 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-xl cursor-pointer"
+                >
+                  +
+                </button>
+              </form>
+
+              <div className="space-y-2">
+                {incomes.map((inc) => (
+                  <div
+                    key={inc.id}
+                    className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{inc.description}</p>
+                      <p className="text-xs text-zinc-500">Por {inc.user?.name}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-emerald-400">{formatBRL(inc.amount)}</span>
+                      <button
+                        onClick={() => handleDeleteIncome(inc.id)}
+                        className="text-zinc-500 hover:text-rose-400 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Carteira de Cartões e Pix */}
+            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-6 space-y-5">
+              <div>
+                <h2 className="font-semibold text-base">Carteira (Cartões & Pix)</h2>
+                <p className="text-xs text-zinc-400">Ex: Cartão Itaú, Santander, Pix Nubank...</p>
+              </div>
+
+              <form onSubmit={handleAddWallet} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Nome do cartão ou Pix..."
+                  value={walletForm.name}
+                  onChange={(e) => setWalletForm({ ...walletForm, name: e.target.value })}
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm"
+                />
+                <select
+                  value={walletForm.type}
+                  onChange={(e) => setWalletForm({ ...walletForm, type: e.target.value })}
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                >
+                  <option value="Crédito">Crédito</option>
+                  <option value="Débito">Débito</option>
+                  <option value="Pix">Pix</option>
+                  <option value="Dinheiro">Dinheiro</option>
+                </select>
+                <button
+                  type="submit"
+                  className="bg-[#3B5BFF] hover:bg-[#2f4be0] text-white text-sm font-medium px-4 py-2 rounded-xl cursor-pointer"
+                >
+                  +
+                </button>
+              </form>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {wallets.map((w) => (
+                  <div
+                    key={w.id}
+                    className="p-4 rounded-2xl bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">{w.name}</p>
+                      <p className="text-xs text-zinc-500">{w.type} • {w.user?.name}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteWallet(w.id)}
+                      className="text-zinc-500 hover:text-rose-400 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== 5. LISTA DE PRIORIDADES ==================== */}
+        {section === 'priorities' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <form
+              onSubmit={handleAddPriority}
+              className="bg-zinc-900/50 border border-zinc-800/80 rounded-3xl p-6 space-y-4 h-fit"
+            >
+              <h2 className="font-semibold text-base">Adicionar à Lista de Prioridades</h2>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Ar-condicionado, Geladeira..."
+                value={priorityForm.name}
+                onChange={(e) => setPriorityForm({ ...priorityForm, name: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+              />
+              <input
+                type="number"
+                step="0.01"
+                required
+                placeholder="Valor Estimado (R$)"
+                value={priorityForm.estimatedPrice}
+                onChange={(e) => setPriorityForm({ ...priorityForm, estimatedPrice: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+              />
+              <select
+                value={priorityForm.priority}
+                onChange={(e) =>
+                  setPriorityForm({ ...priorityForm, priority: e.target.value as 'Alta' | 'Média' | 'Baixa' })
+                }
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
+              >
+                <option value="Alta">Prioridade Alta</option>
+                <option value="Média">Prioridade Média</option>
+                <option value="Baixa">Prioridade Baixa</option>
+              </select>
+              <button
+                type="submit"
+                className="w-full bg-[#3B5BFF] hover:bg-[#2f4be0] text-white text-sm font-medium py-2.5 rounded-xl cursor-pointer"
+              >
+                Salvar Prioridade
+              </button>
+            </form>
+
+            <div className="lg:col-span-2 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-6 space-y-3">
+              <h2 className="font-semibold text-base mb-2">Próximas Compras do Casal</h2>
+              {priorities.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhum item na lista de prioridades.</p>
+              ) : (
+                priorities.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                      item.purchased ? 'bg-zinc-950/30 border-zinc-800/40 opacity-60' : 'bg-zinc-950/70 border-zinc-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => handleTogglePriority(item)} className="cursor-pointer">
+                        {item.purchased ? (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        ) : (
+                          <Circle className="w-5 h-5 text-zinc-500 hover:text-[#3B5BFF]" />
+                        )}
+                      </button>
+                      <div>
+                        <p className={`text-sm font-medium ${item.purchased && 'line-through'}`}>{item.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-md font-semibold ${
+                              item.priority === 'Alta'
+                                ? 'bg-rose-500/15 text-rose-400'
+                                : item.priority === 'Média'
+                                ? 'bg-amber-500/15 text-amber-400'
+                                : 'bg-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {item.priority}
+                          </span>
+                          <span className="text-xs text-zinc-500">por {item.user?.name}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold">{formatBRL(item.estimatedPrice)}</span>
+                      <button
+                        onClick={() => handleDeletePriority(item.id)}
+                        className="text-zinc-500 hover:text-rose-400 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== 6. CALCULADORA DE COMPROMETIMENTO ==================== */}
+        {section === 'calculator' && (
+          <div className="max-w-2xl mx-auto bg-zinc-900/50 border border-zinc-800/80 rounded-3xl p-6 sm:p-8 space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-[#3B5BFF]" />
+                Calculadora de Comprometimento da Renda
+              </h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                Simule uma compra antes de passar o cartão e veja o impacto real no mês do casal.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1.5">Valor da Compra (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 2500.00"
+                  value={calcAmount}
+                  onChange={(e) => setCalcAmount(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-[#3B5BFF] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1.5">Número de Parcelas</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="48"
+                  value={calcInstallments}
+                  onChange={(e) => setCalcInstallments(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-[#3B5BFF] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+              <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <p className="text-xs text-zinc-500">Parcela Mensal</p>
+                <p className="text-lg font-bold text-[#3B5BFF] mt-1">{formatBRL(calcResult.parcelaNova)}</p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  +{calcResult.impactoPercentual.toFixed(1)}% da renda
+                </p>
+              </div>
+
+              <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <p className="text-xs text-zinc-500">Novo Comprometimento</p>
+                <p
+                  className={`text-lg font-bold mt-1 ${
+                    calcResult.novoPercentual > 80
+                      ? 'text-rose-400'
+                      : calcResult.novoPercentual > 60
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}
+                >
+                  {calcResult.novoPercentual.toFixed(1)}%
+                </p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  Antes: {stats.percentualComprometido.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <p className="text-xs text-zinc-500">Saldo Livre Após Compra</p>
+                <p
+                  className={`text-lg font-bold mt-1 ${
+                    calcResult.novoSaldoLivre >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {formatBRL(calcResult.novoSaldoLivre)}
+                </p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Por mês</p>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Modal Novo Gasto */}
-      {isModalOpen && (
+      {/* ==================== MODAL CRIAR / EDITAR GASTO ==================== */}
+      {isExpenseModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <h2 className="text-lg font-semibold">Registrar Novo Gasto</h2>
+                <h2 className="text-lg font-semibold">
+                  {editingExpenseId ? 'Editar Gasto' : 'Registrar Novo Gasto'}
+                </h2>
                 <p className="text-xs text-zinc-400">
-                  Será marcado automaticamente em nome de{' '}
-                  <span className="text-zinc-100 font-medium">{user.name}</span>
+                  Lançamento em nome de <span className="text-zinc-100 font-medium">{user.name}</span>
                 </p>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsExpenseModalOpen(false)}
                 className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="space-y-4">
+            <form onSubmit={handleSaveExpense} className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 {(['Moveis', 'Comum'] as const).map((type) => (
                   <button
                     key={type}
                     type="button"
                     onClick={() =>
-                      setFormData({
-                        ...formData,
+                      setExpenseForm({
+                        ...expenseForm,
                         sheetType: type,
                         category: type === 'Moveis' ? 'Móveis' : 'Moradia',
-                        installments: type === 'Comum' ? '1' : formData.installments,
+                        installments: type === 'Comum' ? '1' : expenseForm.installments,
                       })
                     }
                     className={`py-2.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
-                      formData.sheetType === type
+                      expenseForm.sheetType === type
                         ? 'bg-[#3B5BFF]/15 border-[#3B5BFF] text-white'
                         : 'bg-zinc-950 border-zinc-800 text-zinc-400'
                     }`}
@@ -480,10 +1193,10 @@ export default function Home() {
                 <input
                   type="text"
                   required
-                  placeholder={formData.sheetType === 'Moveis' ? 'Ex: Sofá, Forno...' : 'Ex: Luz, Mercado...'}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[#3B5BFF]"
+                  placeholder="Ex: Sofá, Mercado, Luz..."
+                  value={expenseForm.description}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </div>
 
@@ -491,11 +1204,11 @@ export default function Home() {
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1.5">Categoria</label>
                   <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3B5BFF]"
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
                   >
-                    {formData.sheetType === 'Moveis' ? (
+                    {expenseForm.sheetType === 'Moveis' ? (
                       <>
                         <option value="Móveis">Móveis</option>
                         <option value="Eletrodoméstico">Eletrodoméstico</option>
@@ -520,36 +1233,55 @@ export default function Home() {
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0.00"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[#3B5BFF]"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </div>
               </div>
 
-              {formData.sheetType === 'Moveis' && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1.5">
-                    Quantidade de Parcelas
-                  </label>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Carteira / Cartão</label>
+                  <select
+                    value={expenseForm.walletId}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, walletId: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                  >
+                    <option value="">Sem carteira</option>
+                    {wallets.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Parcelas</label>
                   <input
                     type="number"
                     min="1"
                     max="48"
-                    value={formData.installments}
-                    onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[#3B5BFF]"
+                    value={expenseForm.installments}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, installments: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </div>
-              )}
+              </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-[#3B5BFF] hover:bg-[#2f4be0] disabled:opacity-50 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 mt-2 cursor-pointer"
+                className="w-full bg-[#3B5BFF] hover:bg-[#2f4be0] disabled:opacity-50 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar no Banco'}
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : editingExpenseId ? (
+                  'Salvar Alterações'
+                ) : (
+                  'Salvar Gasto'
+                )}
               </button>
             </form>
           </div>

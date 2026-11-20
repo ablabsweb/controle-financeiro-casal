@@ -8,29 +8,67 @@ datasource db {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique // "Arthur" ou "Pyetra"
-  password  String    // Senha de acesso
-  expenses  Expense[]
-  incomes   Income[]
+  id            Int            @id @default(autoincrement())
+  name          String         @unique
+  password      String
+  expenses      Expense[]
+  incomes       Income[]
+  wallets       Wallet[]
+  fixedBills    FixedBill[]
+  priorityItems PriorityItem[]
+}
+
+model Wallet {
+  id       Int       @id @default(autoincrement())
+  name     String    // Ex: Cartão Itaú, Pix Nubank, Santander
+  type     String    // "Crédito", "Débito", "Pix", "Dinheiro"
+  userId   Int
+  user     User      @relation(fields: [userId], references: [id])
+  expenses Expense[]
 }
 
 model Expense {
-  id          Int      @id @default(autoincrement())
-  description String   // Ex: Forno, Sofá, Luz, Condomínio
-  category    String   
-  amount      Float
-  installments Int     @default(1)
-  sheetType   String   // "Moveis" ou "Comum"
-  payerId     Int      // Identifica quem registou o gasto
-  payer       User     @relation(fields: [payerId], references: [id])
-  createdAt   DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  description  String
+  category     String
+  amount       Float
+  installments Int      @default(1)
+  sheetType    String   // "Moveis" ou "Comum"
+  payerId      Int
+  payer        User     @relation(fields: [payerId], references: [id])
+  walletId     Int?
+  wallet       Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
 }
 
 model Income {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  amount    Float
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  description String   @default("Salário / Renda")
+  amount      Float
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model FixedBill {
+  id          Int      @id @default(autoincrement())
+  description String   // Ex: Internet, Condomínio, Streaming
+  amount      Float
+  dueDay      Int      // Dia do vencimento (1 a 31)
+  category    String
+  isActive    Boolean  @default(true) // false = Cancelada
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model PriorityItem {
+  id             Int      @id @default(autoincrement())
+  name           String   // Ex: Geladeira, Ar-condicionado
+  estimatedPrice Float
+  priority       String   // "Alta", "Média", "Baixa"
+  purchased      Boolean  @default(false)
+  userId         Int
+  user           User     @relation(fields: [userId], references: [id])
+  createdAt      DateTime @default(now())
 }
