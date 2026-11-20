@@ -86,6 +86,7 @@ const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
 export default function Home() {
+  const [today, setToday] = useState(1);
   const [user, setUser] = useState<User | null>(null);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -135,10 +136,11 @@ export default function Home() {
   const [calcAmount, setCalcAmount] = useState('');
   const [calcInstallments, setCalcInstallments] = useState('1');
 
-  useEffect(() => {
-    const saved = localStorage.getItem('casal_user');
-    if (saved) setUser(JSON.parse(saved));
-  }, []);
+useEffect(() => {
+  setToday(new Date().getDate());
+  const saved = localStorage.getItem('casal_user');
+  if (saved) setUser(JSON.parse(saved));
+}, []);
 
   useEffect(() => {
     if (user) fetchAllData();
@@ -385,16 +387,15 @@ export default function Home() {
   }, [expenses, incomes, fixedBills]);
 
   // Próximas contas a vencer (ordenadas a partir do dia de hoje)
-  const upcomingBills = useMemo(() => {
-    const today = new Date().getDate();
-    return fixedBills
-      .filter((b) => b.isActive)
-      .sort((a, b) => {
-        const diffA = a.dueDay >= today ? a.dueDay - today : a.dueDay + 31 - today;
-        const diffB = b.dueDay >= today ? b.dueDay - today : b.dueDay + 31 - today;
-        return diffA - diffB;
-      });
-  }, [fixedBills]);
+const upcomingBills = useMemo(() => {
+  return fixedBills
+    .filter((b) => b.isActive)
+    .sort((a, b) => {
+      const diffA = a.dueDay >= today ? a.dueDay - today : a.dueDay + 31 - today;
+      const diffB = b.dueDay >= today ? b.dueDay - today : b.dueDay + 31 - today;
+      return diffA - diffB;
+    });
+}, [fixedBills, today]);
 
   const filteredExpenses = useMemo(() => {
     if (expenseFilter === 'Todos') return expenses;
