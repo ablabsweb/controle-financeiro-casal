@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique // "Arthur" ou "Pyetra"
+  password  String    // Senha de acesso
+  expenses  Expense[]
+  incomes   Income[]
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  description String   // Ex: Forno, Sofá, Luz, Condomínio
+  category    String   
+  amount      Float
+  installments Int     @default(1)
+  sheetType   String   // "Moveis" ou "Comum"
+  payerId     Int      // Identifica quem registou o gasto
+  payer       User     @relation(fields: [payerId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Income {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Float
+  createdAt DateTime @default(now())
+}
